@@ -1,0 +1,468 @@
+<script setup>
+import { computed, ref } from 'vue';
+import { verifySimplePassword } from '@/api/memberApi';
+import { getErrorMessage } from '@/utils/apiError';
+
+
+const props = defineProps({
+
+  // 모달 표시 여부
+  visible: {
+
+    type: Boolean,
+
+    default: false
+
+  }
+
+});
+
+
+const emit = defineEmits([
+  'success',
+  'close'
+]);
+
+
+
+
+//비밀번호
+const password = ref('');
+
+const PASSWORD_LENGTH = 6;
+
+
+
+const passwordDots = computed(() => {
+
+  return Array.from(
+
+    { length: PASSWORD_LENGTH },
+
+    (_, index) => index < password.value.length
+
+  );
+
+});
+
+
+// 서버 검증 중에는 키패드를 잠근다.
+const verifying = ref(false);
+
+// 불일치·잠금 사유를 사용자에게 보여준다.
+const errorMessage = ref('');
+
+
+// 6자리를 다 채우면 서버에 실제로 맞는지 물어본다.
+// 예전에는 자릿수만 채우면 무조건 통과시켰다.
+const submitPassword = async () => {
+
+  verifying.value = true;
+
+  errorMessage.value = '';
+
+
+  try {
+
+    const result = await verifySimplePassword(password.value);
+
+
+    if (result?.matched) {
+
+      password.value = '';
+
+      emit('success');
+
+      return;
+
+    }
+
+
+    // 서버가 200에 matched:false로 답하는 경우 (남은 시도 횟수가 있는 불일치)
+    password.value = '';
+
+    errorMessage.value = '간편비밀번호가 일치하지 않습니다.';
+
+  } catch (error) {
+
+    password.value = '';
+
+
+    const code = error?.response?.data?.code;
+
+
+    // 아직 간편비밀번호를 설정하지 않은 회원이면 설정 화면으로 안내해야 한다.
+    if (code === 'SIMPLE_PASSWORD_NOT_SET') {
+
+      errorMessage.value =
+        '간편비밀번호가 설정되어 있지 않습니다. 계정 및 보안에서 먼저 설정해주세요.';
+
+      return;
+
+    }
+
+
+    // 5회 연속 실패 시 서버가 5분간 잠근다(429).
+    errorMessage.value = getErrorMessage(
+
+      error,
+
+      '간편비밀번호 확인에 실패했습니다.'
+
+    );
+
+  } finally {
+
+    verifying.value = false;
+
+  }
+
+};
+
+
+//숫자 입력
+const inputNumber = (number) => {
+
+  if (verifying.value) {
+
+    return;
+
+  }
+
+  if (password.value.length >= PASSWORD_LENGTH) {
+
+    return;
+
+  }
+
+  errorMessage.value = '';
+
+  password.value += number;
+
+  if (password.value.length === PASSWORD_LENGTH) {
+
+    setTimeout(submitPassword, 200);
+
+  }
+
+};
+
+
+//삭제
+const deleteNumber = () => {
+
+  password.value = password.value.slice(0, -1);
+
+};
+
+//닫기
+const closeModal = () => {
+
+  password.value = '';
+
+  emit('close');
+
+};
+</script>
+
+<template>
+  <div class="overlay" @click="closeModal">
+    <div
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label="간편 비밀번호 입력"
+      @click.stop
+    >
+
+      <h2>
+
+        간편 비밀번호 입력
+
+      </h2>
+
+      <p class="description">
+
+        결제를 위해 비밀번호를 입력해주세요.
+
+      </p>
+
+      <!-- ● ● ● ● ● ● -->
+      <div class="dots">
+
+        <span
+
+          v-for="(filled, index) in passwordDots"
+
+          :key="index"
+
+          :class="{ active: filled }"
+
+        />
+
+      </div>
+
+      <!-- 서버 검증 결과 안내 (불일치·잠금·미설정) -->
+      <p v-if="errorMessage" class="error-message" role="alert">
+
+        {{ errorMessage }}
+
+      </p>
+
+      <p v-else-if="verifying" class="verifying-message">
+
+        확인 중...
+
+      </p>
+
+      <!-- 숫자패드 -->
+      <div class="keypad">
+
+        <button
+
+          v-for="number in 9"
+
+          :key="number"
+
+          @click="inputNumber(number)"
+
+        >
+
+          {{ number }}
+
+        </button>
+
+        <button
+          class="empty"
+        />
+
+        <button @click="inputNumber(0)">
+
+          0
+
+        </button>
+
+        <button @click="deleteNumber">
+
+          ←
+
+        </button>
+
+      </div>
+
+      <button
+
+        class="cancel"
+
+        @click="closeModal"
+
+      >
+
+        취소
+
+      </button>
+
+    </div>
+
+  </div>
+
+</template>
+
+<style scoped>
+
+.overlay{
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  animation: overlay-fade-in 0.3s ease-out;
+}
+
+@keyframes overlay-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.modal{
+  width:90%;
+  max-width:320px;
+  padding: var(--space-xl);
+  border-radius: var(--radius-xl);
+  text-align:center;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, var(--color-surface) 60%);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  animation: modal-emerge 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-sizing: border-box;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+@keyframes modal-emerge {
+  from {
+    opacity: 0;
+    transform: scale(0.85) translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+[data-theme="dark"] .modal{
+
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.06) 0%, var(--color-surface) 60%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+
+}
+
+.modal h2{
+
+  font-size: var(--font-lg);
+  font-weight: var(--font-bold);
+  color: var(--color-text-primary);
+  margin: 0;
+
+}
+
+.description{
+
+  margin-top: var(--space-xs);
+
+  font-size: var(--font-sm);
+  color: var(--color-text-secondary);
+
+}
+
+.dots{
+
+  display:flex;
+
+  justify-content:center;
+
+  gap: var(--space-sm);
+
+  margin: var(--space-2xl) 0;
+
+}
+
+.dots span{
+
+  width:14px;
+
+  height:14px;
+
+  border-radius:50%;
+
+  background:var(--color-border);
+
+}
+
+.dots span.active{
+
+  background:var(--color-primary);
+
+}
+
+.error-message{
+  margin: 0 0 var(--space-md);
+  font-size: var(--font-xs);
+  color: var(--color-input-error);
+  text-align: center;
+  line-height: 1.5;
+}
+
+.verifying-message{
+  margin: 0 0 var(--space-md);
+  font-size: var(--font-xs);
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+.keypad{
+
+  display:grid;
+
+  grid-template-columns:repeat(3,80px);
+
+  justify-content:center;
+
+  gap: var(--space-md);
+
+}
+
+.keypad button{
+
+  width:80px;
+
+  height:80px;
+
+  border:1px solid var(--color-border);
+
+  border-radius:50%;
+
+  font-size: var(--font-title);
+
+  background: var(--color-surface);
+
+  color:var(--color-text-primary);
+
+  font-weight:var(--font-semibold);
+
+  cursor:pointer;
+
+  transition:var(--transition-fast);
+
+}
+
+.keypad button:active{
+
+  transform:scale(0.96);
+
+}
+
+.empty{
+
+  visibility:hidden;
+
+}
+
+.cancel{
+
+  width:100%;
+
+  margin-top: var(--space-xl);
+
+  height:48px;
+
+  border:none;
+
+  border-radius:12px;
+
+  background:
+    linear-gradient(
+      90deg,
+      var(--color-btn-primary-start),
+      var(--color-btn-primary-end)
+    );
+
+  color:var(--color-btn-primary-text);
+
+  font-weight:var(--font-semibold);
+
+  cursor:pointer;
+
+  transition:var(--transition-fast);
+
+}
+
+</style>

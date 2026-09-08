@@ -1,0 +1,158 @@
+// src/stores/authStore.js
+
+import { ref, computed } from 'vue';
+import { defineStore } from 'pinia';
+import { useRouter } from 'vue-router';
+
+
+export const useAuthStore = defineStore(
+  'auth',
+  () => {
+
+    // 초기 상태 복원
+    const token = ref(
+      localStorage.getItem('token') || null
+    )
+
+
+    const getStoredUser = () => {
+
+      const savedUser =
+        localStorage.getItem('user')
+
+
+      if (!savedUser) {
+        return null
+      }
+
+
+      try {
+
+        const parsed = JSON.parse(savedUser)
+
+
+        // 프로필 사진 필드가 한때 profileImage와 profileImageUrl 두 이름으로 갈렸다.
+        // 지금은 profileImageUrl 하나만 쓴다 — 예전 이름으로 저장해 둔 기기에서
+        // 사진이 사라지지 않도록 여기서 한 번 옮겨준다.
+        if (parsed && !parsed.profileImageUrl && parsed.profileImage) {
+
+          parsed.profileImageUrl = parsed.profileImage
+
+          delete parsed.profileImage
+
+        }
+
+
+        return parsed
+
+      } catch (error) {
+
+        console.error(
+          '저장된 사용자 정보 파싱 실패:',
+          error
+        )
+
+        localStorage.removeItem('user')
+
+        return null
+
+      }
+
+    }
+
+
+    const user = ref(
+      getStoredUser()
+    )
+
+
+
+
+    // 로그인
+    const setLogin = (loginToken, userInfo) => {
+      token.value = loginToken;
+      user.value = userInfo;
+
+      localStorage.setItem('token', loginToken);
+      localStorage.setItem('user', JSON.stringify(userInfo));
+    };
+
+    const setAccessToken = (newAccessToken) => {
+      token.value = newAccessToken;
+      localStorage.setItem('token', newAccessToken);
+    };
+    const updateUser = (updatedUser) => {
+
+  user.value = {
+    ...(user.value ?? {}),
+    ...updatedUser,
+  };
+
+
+  localStorage.setItem(
+    'user',
+    JSON.stringify(user.value)
+  );
+
+};
+
+
+
+   
+    // 로그아웃
+    const logout = () => {
+
+
+      token.value = null
+
+      user.value = null
+
+
+
+      localStorage.removeItem(
+        'token'
+      )
+
+
+      localStorage.removeItem(
+        'user'
+      )
+
+
+      console.log(
+        '로그아웃 완료'
+      )
+
+    }
+
+
+    // 로그인 여부 확인용
+    const isLogin = () => {
+
+      return !!token.value
+
+    }
+
+
+
+    return {
+
+  token,
+
+  user,
+
+  setLogin,
+
+  setAccessToken,
+
+  updateUser,
+
+  logout,
+
+  isLogin
+
+
+}
+  }
+)
+// 07_25 연동 변경: 로그인 토큰과 인증 상태를 실제 인증 API 기준으로 관리한다.
